@@ -7,8 +7,6 @@ from telebot import types
 # =========================================================
 # I-Beam™ Bot — НАСТРОЙКИ
 # =========================================================
-# Вставь сюда НОВЫЙ токен из @BotFather.
-# Если токен уже публиковался в чате, сначала отзови его через /revoke.
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 
 CHANNEL_URL = "https://t.me/beamcorporation"
@@ -40,7 +38,6 @@ def safe_delete(chat_id, message_id):
 
 
 def clear_bot_messages(chat_id):
-    # Удаляет только сообщения бота, которые были сохранены во время работы.
     for message_id in list(user_messages.get(chat_id, set())):
         safe_delete(chat_id, message_id)
     user_messages.pop(chat_id, None)
@@ -81,7 +78,6 @@ def stars_menu():
 
 
 def edit_message_menu(chat_id, message_id, text, markup):
-    """Обновляет подпись фото или текстовое сообщение."""
     try:
         bot.edit_message_caption(
             chat_id=chat_id,
@@ -104,7 +100,6 @@ def edit_message_menu(chat_id, message_id, text, markup):
     except Exception:
         pass
 
-    # Если изменить сообщение не получилось, отправляем новое.
     sent = bot.send_message(chat_id, text, reply_markup=markup)
     remember(chat_id, sent)
 
@@ -143,7 +138,6 @@ def send_main_menu(chat_id):
 def start(message):
     chat_id = message.chat.id
 
-    # Удаляем сообщение пользователя с командой /start, если Telegram разрешает.
     try:
         bot.delete_message(chat_id, message.message_id)
     except Exception:
@@ -169,7 +163,6 @@ def handle_buttons(call):
 
     if data == "exit":
         clear_bot_messages(chat_id)
-        # На случай, если сообщение меню не попало в список учёта.
         safe_delete(chat_id, message_id)
         return
 
@@ -184,13 +177,17 @@ def handle_buttons(call):
         return
 
     if data == "back":
+        for old_message_id in list(user_messages.get(chat_id, set())):
+            if old_message_id != message_id:
+                safe_delete(chat_id, old_message_id)
+        user_messages[chat_id] = {message_id}
+
         text = (
             "👋 Привет! Добро пожаловать в I-Beam™!\n\n"
             "Здесь ты можешь поддержать наш проект и найти наш "
             "Telegram-канал.\n\n"
             "Выбирай, что тебя интересует, с помощью кнопок ниже. 🖤"
         )
-        # Если исходное сообщение содержит фото, вернём его подпись и кнопки.
         try:
             bot.edit_message_caption(
                 chat_id=chat_id,
@@ -235,16 +232,13 @@ def handle_buttons(call):
         except Exception as error:
             sent = bot.send_message(
                 chat_id,
-                "Не удалось создать счёт. Проверь подключение к интернету "
-                "и обнови библиотеку pyTelegramBotAPI.\n"
-                "Подробности ошибки доступны в консоли Pydroid 3.",
+                "Не удалось создать счёт. Попробуй ещё раз позже.",
             )
             remember(chat_id, sent)
             print("Ошибка создания счёта:", repr(error))
         return
 
     if data == "random":
-        # Удаляем сообщение меню, затем показываем случайный эмодзи на 2 секунды.
         safe_delete(chat_id, message_id)
         emoji = random.choice(["🥵", "😡", "🤬"])
         sent = bot.send_message(chat_id, emoji)
@@ -265,8 +259,6 @@ def handle_buttons(call):
 # =========================================================
 @bot.pre_checkout_query_handler(func=lambda query: True)
 def pre_checkout_handler(query):
-    # Для реального проекта стоит дополнительно проверять payload,
-    # валюту и сумму до подтверждения предварительного платежа.
     try:
         valid_payloads = {
             f"ibeam_donation_{amount}" for amount in STAR_AMOUNTS
@@ -317,14 +309,27 @@ def successful_payment(message):
 
 
 # =========================================================
-# ЗАПУСК
+# ЗАПУСК (для Render)
 # =========================================================
+from flask import Flask
+
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    return "I-Beam Bot is alive"
+
+
+def run_bot():
+    if not TOKEN.strip():
+        print("ОШИБКА: токен не найден в переменных окружения.")
+        return
+    print("I-Beam™ Bot запускается...")
+    bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
+
+
 if __name__ == "__main__":
-    if TOKEN == "ВСТАВЬ_НОВЫЙ_ТОКЕН_СЮДА" or not TOKEN.strip():
-        print("ОШИБКА: сначала вставь действующий токен от @BotFather в переменную TOKEN.")
-    else:
-        print("I-Beam™ Bot запускается...")
-        try:
-            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
-        except KeyboardInterrupt:
-            print("Бот остановлен.")
+    threading.Thread(target=run_bot, daemon=True).start()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
